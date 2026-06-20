@@ -50,6 +50,12 @@ public class TestPriorityQueue extends LuceneTestCase {
     }
   }
 
+  private static class TernaryIntegerQueue extends PriorityQueue<Integer> {
+    public TernaryIntegerQueue(int count) {
+      super(count, 3, (a, b) -> a < b);
+    }
+  }
+
   public void testZeroSizedQueue() {
     PriorityQueue<Integer> pq = new IntegerQueue(0);
     assertEquals((Object) 1, pq.insertWithOverflow(1));
@@ -96,6 +102,11 @@ public class TestPriorityQueue extends LuceneTestCase {
   public void testComparatorPQ() throws Exception {
     int size = atLeast(10000);
     testPQ(PriorityQueue.usingComparator(size, Integer::compareTo), size, random());
+  }
+
+  public void testTernaryPQ() {
+    int size = atLeast(10000);
+    testPQ(new TernaryIntegerQueue(size), size, random());
   }
 
   public static void testPQ(PriorityQueue<Integer> pq, int count, Random gen) {
@@ -196,20 +207,16 @@ public class TestPriorityQueue extends LuceneTestCase {
   }
 
   private boolean assertHeap(PriorityQueue<Integer> pq) {
+    return assertHeap(pq, 2);
+  }
+
+  private boolean assertHeap(PriorityQueue<Integer> pq, int arity) {
     Object[] heapArray = pq.getHeapArray();
-    // The loop goes down to 1 as heap is 1-based not 0-based.
-    for (int i = (heapArray.length >>> 1); i >= 1; i--) {
-      int left = i << 1;
-      int right = left + 1;
-      if (right < heapArray.length) {
-        if ((Integer) heapArray[i] > (Integer) heapArray[right]) {
-          return false;
-        }
-        if ((Integer) heapArray[i] > (Integer) heapArray[left]) {
-          return false;
-        }
-      } else if (left < heapArray.length) {
-        if ((Integer) heapArray[i] > (Integer) heapArray[left]) {
+    for (int i = 1; i <= pq.size(); i++) {
+      int firstChild = arity * (i - 1) + 2;
+      int lastChild = Math.min(firstChild + arity - 1, pq.size());
+      for (int child = firstChild; child <= lastChild; child++) {
+        if ((Integer) heapArray[i] > (Integer) heapArray[child]) {
           return false;
         }
       }
@@ -305,6 +312,38 @@ public class TestPriorityQueue extends LuceneTestCase {
     }
 
     pq.checkValidity();
+  }
+
+  public void testRandomAdditionsAgainstJavaPqTernaryHeap() {
+    int maxElement = RandomNumbers.randomIntBetween(random(), 1, 500);
+    int size = maxElement / 2 + 1;
+
+    var reference = new java.util.PriorityQueue<Integer>();
+    var pq = new TernaryIntegerQueue(size);
+
+    Random localRandom = nonAssertingRandom(random());
+
+    HashMap<Integer, Integer> ints = new HashMap<>();
+
+    for (int i = 0, iters = size * 2; i < iters; i++) {
+      Integer element = ints.computeIfAbsent(localRandom.nextInt(maxElement), k -> k);
+
+      var dropped = pq.insertWithOverflow(element);
+
+      reference.add(element);
+      Integer droppedReference;
+      if (reference.size() > size) {
+        droppedReference = reference.remove();
+      } else {
+        droppedReference = null;
+      }
+
+      assertEquals("insertWithOverflow() difference.", dropped, droppedReference);
+      assertEquals("insertWithOverflow() size difference?", reference.size(), pq.size());
+      assertEquals("top() difference?", reference.peek(), pq.top());
+    }
+
+    assertTrue(assertHeap(pq, 3));
   }
 
   public void testIteratorEmpty() {
